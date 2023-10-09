@@ -34,7 +34,6 @@ import net.minecraft.world.explosion.ExplosionBehavior;
 
 import fi.dy.masa.environmentalcreepers.EnvironmentalCreepers;
 import fi.dy.masa.environmentalcreepers.config.Configs;
-import fi.dy.masa.environmentalcreepers.util.ExplosionUtils;
 
 @Mixin(Explosion.class)
 public abstract class MixinExplosion
@@ -49,25 +48,6 @@ public abstract class MixinExplosion
 
     @Shadow @org.jetbrains.annotations.Nullable public abstract LivingEntity getCausingEntity();
 
-    @Inject(method = "<init>(Lnet/minecraft/world/World;Lnet/minecraft/entity/Entity;Lnet/minecraft/entity/damage/DamageSource;Lnet/minecraft/world/explosion/ExplosionBehavior;DDDFZLnet/minecraft/world/explosion/Explosion$DestructionType;)V",
-            at = @At("RETURN"))
-    private void envc_modifyExplosionSize(World world, @Nullable Entity entity, @Nullable DamageSource damageSource,
-                                          @Nullable ExplosionBehavior explosionBehavior, double x, double y, double z, float power, boolean fire,
-                                          Explosion.DestructionType destructionType, CallbackInfo ci)
-    {
-        if (entity instanceof CreeperEntity && Configs.Toggles.MODIFY_CREEPER_EXPLOSION_STRENGTH.getValue())
-        {
-            if (entity.getDataTracker().get(IMixinCreeperEntity.envc_getCharged()))
-            {
-                this.power = Configs.Generic.CREEPER_EXPLOSION_STRENGTH_CHARGED.getFloatValue();
-            }
-            else
-            {
-                this.power = Configs.Generic.CREEPER_EXPLOSION_STRENGTH_NORMAL.getFloatValue();
-            }
-        }
-    }
-
     @Inject(method = "affectWorld", at = @At("HEAD"), cancellable = true)
     private void envc_disableExplosionBlockDamageOrCompletely(CallbackInfo ci)
     {
@@ -76,191 +56,11 @@ public abstract class MixinExplosion
             EnvironmentalCreepers.logInfo(this::envc_printExplosionInfo);
         }
 
-        if (Configs.Toggles.DISABLE_ALL_EXPLOSIONS.getValue())
+        if (this.entity instanceof CreeperEntity)
         {
-            EnvironmentalCreepers.logInfo("MixinExplosion.envc_disableExplosionBlockDamageOrCompletely(), type: '{}'", (this.entity instanceof CreeperEntity) ? "Creeper" : "Other");
-            ci.cancel();
-        }
-        else if (this.entity instanceof CreeperEntity)
-        {
-            if (Configs.Toggles.DISABLE_CREEPER_EXPLOSION_BLOCK_DAMAGE.getValue() ||
-                (Configs.Toggles.CREEPER_ALTITUDE_CONDITION.getValue() &&
-                (this.y < Configs.Generic.CREEPER_ALTITUDE_DAMAGE_MIN_Y.getValue() ||
-                 this.y > Configs.Generic.CREEPER_ALTITUDE_DAMAGE_MAX_Y.getValue())))
-            {
-                EnvironmentalCreepers.logInfo("MixinExplosion.envc_disableExplosionBlockDamageOrCompletely: clearAffectedBlockPositions(), type: 'Creeper'");
-                this.affectedBlocks.clear();
-            }
-
-            if (Configs.Toggles.CREEPER_EXPLOSION_CHAIN_REACTION.getValue())
-            {
-                ExplosionUtils.causeCreeperChainReaction(this.world, new Vec3d(this.x, this.y, this.z));
-            }
-        }
-        else if (Configs.Toggles.DISABLE_OTHER_EXPLOSION_BLOCK_DAMAGE.getValue() && (this.entity instanceof CreeperEntity) == false)
-        {
-            EnvironmentalCreepers.logInfo("MixinExplosion.envc_disableExplosionBlockDamageOrCompletely: clearAffectedBlockPositions(), type: 'Other'");
+            EnvironmentalCreepers.logInfo("MixinExplosion.envc_disableExplosionBlockDamageOrCompletely: clearAffectedBlockPositions(), type: 'Creeper'");
             this.affectedBlocks.clear();
         }
-    }
-
-    @Inject(method = "affectWorld", at = @At(value = "INVOKE",
-            target = "Lnet/minecraft/util/Util;shuffle(Lit/unimi/dsi/fastutil/objects/ObjectArrayList;Lnet/minecraft/util/math/random/Random;)V"))
-    private void envc_preventItemDrops(boolean particles, CallbackInfo ci)
-    {
-        if (this.entity instanceof CreeperEntity)
-        {
-            if (Configs.Toggles.MODIFY_CREEPER_EXPLOSION_DROP_CHANCE.getValue() &&
-                Configs.Generic.CREEPER_EXPLOSION_BLOCK_DROP_CHANCE.getFloatValue() == 0.0f)
-            {
-                this.envc_removeBlocks();
-            }
-        }
-        else
-        {
-            if (Configs.Toggles.MODIFY_OTHER_EXPLOSION_DROP_CHANCE.getValue() &&
-                Configs.Generic.OTHER_EXPLOSION_BLOCK_DROP_CHANCE.getFloatValue() == 0.0f)
-            {
-                this.envc_removeBlocks();
-            }
-        }
-    }
-
-    @Redirect(method = "affectWorld", allow = 1,
-              slice = @Slice(from = @At(value = "FIELD", target = "Lnet/minecraft/world/explosion/Explosion$DestructionType;DESTROY_WITH_DECAY:Lnet/minecraft/world/explosion/Explosion$DestructionType;")),
-              at = @At(value = "INVOKE",
-                       target = "Lnet/minecraft/loot/context/LootContextParameterSet$Builder;add(Lnet/minecraft/loot/context/LootContextParameter;Ljava/lang/Object;)Lnet/minecraft/loot/context/LootContextParameterSet$Builder;"))
-    private <T> LootContextParameterSet.Builder envc_modifyDropChance(LootContextParameterSet.Builder builder, LootContextParameter<T> key, T value)
-    {
-        if (this.entity instanceof CreeperEntity)
-        {
-            if (Configs.Toggles.MODIFY_CREEPER_EXPLOSION_DROP_CHANCE.getValue())
-            {
-                float dropChance = Configs.Generic.CREEPER_EXPLOSION_BLOCK_DROP_CHANCE.getFloatValue();
-
-                if (dropChance > 0.0F && dropChance < 1.0f)
-                {
-                    // See SurvivesExplosion loot condition
-                    float size = 1.0f / dropChance;
-                    return builder.add(LootContextParameters.EXPLOSION_RADIUS, size);
-                }
-            }
-        }
-        else
-        {
-            if (Configs.Toggles.MODIFY_OTHER_EXPLOSION_DROP_CHANCE.getValue())
-            {
-                float dropChance = Configs.Generic.OTHER_EXPLOSION_BLOCK_DROP_CHANCE.getFloatValue();
-
-                if (dropChance > 0.0F && dropChance < 1.0f)
-                {
-                    // See SurvivesExplosion loot condition
-                    float size = 1.0f / dropChance;
-                    return builder.add(LootContextParameters.EXPLOSION_RADIUS, size);
-                }
-            }
-        }
-
-        return builder;
-    }
-
-    @Inject(method = "collectBlocksAndDamageEntities", at = @At("HEAD"), cancellable = true)
-    private void envc_disableExplosionCompletely1(CallbackInfo ci)
-    {
-        if (Configs.Toggles.DISABLE_ALL_EXPLOSIONS.getValue())
-        {
-            EnvironmentalCreepers.logInfo("MixinExplosion.disableExplosionCompletely1(), type: '{}'", (this.entity instanceof CreeperEntity) ? "Creeper" : "Other");
-            ci.cancel();
-        }
-    }
-
-    /*
-    @Redirect(method = "collectBlocksAndDamageEntities", at = @At(value = "INVOKE",
-              target = "Lnet/minecraft/entity/Entity;isImmuneToExplosion()Z"))
-    private boolean disableExplosionEntityDamage(Entity entity)
-    {
-        return this.envc_isImmuneToExplosion(entity);
-    }
-    */
-
-    @ModifyVariable(method = "collectBlocksAndDamageEntities", ordinal = 0,
-                    slice = @Slice(from = @At(value = "INVOKE",
-                                              target = "Lnet/minecraft/world/World;getOtherEntities(Lnet/minecraft/entity/Entity;Lnet/minecraft/util/math/Box;)Ljava/util/List;"),
-                                   to = @At(value = "INVOKE",
-                                            target = "Lnet/minecraft/entity/Entity;isImmuneToExplosion()Z")),
-                    at = @At(value = "INVOKE",
-                             target = "Lnet/minecraft/util/math/Vec3d;<init>(DDD)V"))
-    private List<Entity> envc_disableExplosionEntityDamage(List<Entity> list)
-    {
-        Set<Entity> immune = new HashSet<>();
-
-        for (Entity e : list)
-        {
-            if (this.envc_isImmuneToExplosion(e))
-            {
-                immune.add(e);
-            }
-        }
-
-        if (immune.isEmpty() == false)
-        {
-            EnvironmentalCreepers.logInfo("MixinExplosion.disableExplosionEntityDamage(), type: '{}'", (this.entity instanceof CreeperEntity) ? "Creeper" : "Other");
-            list.removeAll(immune);
-        }
-
-        return list;
-    }
-
-    private boolean envc_isImmuneToExplosion(Entity entity)
-    {
-        Configs.ListType type = Configs.Lists.entityClassListType;
-
-        if (this.entity instanceof CreeperEntity)
-        {
-            if ((Configs.Toggles.DISABLE_CREEPER_EXPLOSION_ENTITY_DAMAGE.getValue() ||
-                (Configs.Toggles.DISABLE_CREEPER_EXPLOSION_ITEM_DAMAGE.getValue() && entity instanceof ItemEntity)) &&
-                (type == Configs.ListType.NONE ||
-                 (type == Configs.ListType.WHITELIST && Configs.EXPLOSION_ENTITY_WHITELIST.contains(entity.getClass())) ||
-                 (type == Configs.ListType.BLACKLIST && Configs.EXPLOSION_ENTITY_BLACKLIST.contains(entity.getClass()) == false)))
-            {
-                return true;
-            }
-        }
-        else
-        {
-            if ((Configs.Toggles.DISABLE_OTHER_EXPLOSION_ENTITY_DAMAGE.getValue() ||
-                (Configs.Toggles.DISABLE_OTHER_EXPLOSION_ITEM_DAMAGE.getValue() && entity instanceof ItemEntity)) &&
-                (type == Configs.ListType.NONE ||
-                 (type == Configs.ListType.WHITELIST && Configs.EXPLOSION_ENTITY_WHITELIST.contains(entity.getClass())) ||
-                 (type == Configs.ListType.BLACKLIST && Configs.EXPLOSION_ENTITY_BLACKLIST.contains(entity.getClass()) == false)))
-            {
-                return true;
-            }
-        }
-
-        return entity.isImmuneToExplosion();
-    }
-
-    private void envc_removeBlocks()
-    {
-        BlockState air = Blocks.AIR.getDefaultState();
-
-        this.world.getProfiler().push("explosion_blocks");
-
-        for (BlockPos pos : this.affectedBlocks)
-        {
-            BlockState state = this.world.getBlockState(pos);
-
-            if (state.isAir() == false)
-            {
-                this.world.setBlockState(pos, air, 3);
-                state.getBlock().onDestroyedByExplosion(this.world, pos, (Explosion) (Object) this);
-            }
-        }
-
-        this.world.getProfiler().pop();
-
-        this.affectedBlocks.clear();
     }
 
     private String envc_printExplosionInfo()

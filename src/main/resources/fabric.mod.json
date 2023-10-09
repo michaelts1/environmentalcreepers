@@ -6,7 +6,8 @@
 
 	"description": "Allows tweaking Creeper (and other) explosion properties",
 	"authors": [
-		"masa"
+		"masa",
+		"Michael T"
 	],
 	"contact": {
 		"homepage": "https://www.curseforge.com/minecraft/mc-mods/environmental-creepers",
